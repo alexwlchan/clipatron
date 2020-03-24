@@ -58,6 +58,7 @@ Unzip the repository.
 
     ```console
     $ python clipatron.py --manifest manifest.csv --input dlr_turns_30.mp4
+    ✨ Clipping done! ✨
     ```
 
 
