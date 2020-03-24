@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# -*- encoding: utf-8 -*-
 """
 This is a script for splitting video clips using ffmpeg.
 
@@ -18,19 +19,19 @@ from __future__ import print_function
 import argparse
 import subprocess
 import csv
+import errno
+import os
 import sys
 
 
-def ffmpeg(*args):
-    try:
-        subprocess.check_call(["ffmpeg"] + list(args))
-    except subprocess.CalledProcessError as err:
-        print("Something went wrong: %r" % err, file=sys.stderr)
-        print("Do you have ffmpeg installed?", file=sys.stderr)
-        sys.exit(1)
+class ClipatronException(Exception):
+    pass
 
 
 def parse_args(argv):
+    """
+    Read the command-line arguments.
+    """
     parser = argparse.ArgumentParser(
         description="A script for clipping videos using ffmpeg."
     )
@@ -46,7 +47,19 @@ def parse_args(argv):
     return parser.parse_args(argv)
 
 
+def ffmpeg(*args):
+    try:
+        subprocess.check_call(["ffmpeg"] + list(args))
+    except subprocess.CalledProcessError as err:
+        print("Something went wrong: %r" % err, file=sys.stderr)
+        print("Do you have ffmpeg installed?", file=sys.stderr)
+        sys.exit(1)
+
+
 def get_rows(csv_manifest_path):
+    """
+    Read the rows from the CSV file
+    """
     with open(csv_manifest_path) as infile:
         reader = csv.DictReader(infile)
 
@@ -59,7 +72,7 @@ def get_rows(csv_manifest_path):
                 filename = row["filename"]
             except KeyError as err:
                 print(
-                    "Row %d in your CSV is missing a required column: %r" %
+                    "Row %d in your CSV is missing a required column: %s" %
                     (row_number, err), file=sys.stderr
                 )
                 sys.exit(1)
@@ -79,14 +92,52 @@ def get_rows(csv_manifest_path):
             yield (start_time, duration, filename)
 
 
+def mkdir_p(path):
+    """
+    Create a directory if it doesn't already exist.
+
+    From https://stackoverflow.com/a/600612/1558022
+    """
+    try:
+        os.makedirs(path)
+    except OSError as exc:
+        if exc.errno == errno.EEXIST and os.path.isdir(path):
+            pass
+        else:
+            raise
+
+
 if __name__ == "__main__":
     args = parse_args(sys.argv[1:])
 
     for (start_time, duration, filename) in get_rows(args.CSV_MANIFEST):
+
+        # Should this video go in a standalone directory?
+        dirname = os.path.dirname(filename)
+        if not dirname:
+            dirname = os.path.basename(os.path.splitext(args.VIDEO)[0])
+
+        mkdir_p(dirname)
+        out_path = os.path.join(dirname, os.path.basename(filename))
+
         ffmpeg(
+            # See in the input file to `start_time`
             "-ss", start_time,
+
+            # Read from `args.VIDEO`
             "-i", args.VIDEO,
+
+            # Read at most `duration` from the video file
             "-t", duration,
+
+            # Use the same codec as the original file
             "-vcodec", "copy",
-            "-an", filename
+
+            # Don't write any audio to the new file
+            "-an",
+
+            # Save the clip to `out_path`
+            out_path
         )
+
+    print("✨ Clipping done! ✨")
